@@ -1,0 +1,111 @@
+/* -*- Mode:C++; c-file-style:"gnu"; indent-tabs-mode:nil; -*- */
+#include <iostream>
+#include "ns3/core-module.h"
+#include "ns3/vanet-security-helper.h"
+#include "ns3/wave-module.h"
+#include "ns3/ipv4-address-helper.h"
+#include "ns3/mobility-module.h"
+#include "ns3/log.h"
+#include "ns3/applications-module.h"
+#include "ns3/ndnSIM-module.h"
+#include "ns3/network-module.h"
+#include "ns3/random-variable-stream.h"
+
+
+
+
+namespace ns3{
+
+	int	main (int argc, char *argv[])
+	{
+	  CommandLine cmd;
+	  cmd.Parse(argc,argv);
+	  uint32_t numPackets = 100 ;
+	  uint32_t packetSize=1000;
+	  NodeContainer nodes;
+	  nodes.Create(100);
+	  std::string phyMode ("OfdmRate6MbpsBW10MHz");
+	  double interval = 1.0;
+	  Time interPacketInterval = Seconds (interval);
+
+	  cmd.Parse (argc,argv);
+
+	  /* ... */
+	  //channel, physical layer, mac layer etc
+	  YansWifiPhyHelper wifiphy = YansWifiPhyHelper::Default();
+	  YansWifiChannelHelper channel = YansWifiChannelHelper::Default();
+	  Ptr<YansWifiChannel> pChannel = channel.Create();
+	  wifiphy.SetChannel(pChannel);
+	  wifiphy.SetPcapDataLinkType(YansWifiPhyHelper::DLT_IEEE802_11);
+	  NqosWaveMacHelper waveMac = NqosWaveMacHelper::Default();
+	  Wifi80211pHelper wifiHelper = Wifi80211pHelper::Default();
+	  //wifiHelper.EnableLogComponents();
+	  wifiHelper.SetRemoteStationManager("ns3::ConstantRateWifiManager","DataMode", StringValue(phyMode),"ControlMode",StringValue(phyMode));
+	  NetDeviceContainer devices = wifiHelper.Install(wifiphy,waveMac,nodes);
+
+
+	  //mobility
+	  MobilityHelper mobility;
+
+	  mobility.SetPositionAllocator ("ns3::GridPositionAllocator",
+                                 "MinX", DoubleValue (0.0),
+                                 "MinY", DoubleValue (0.0),
+                                 "DeltaX", DoubleValue (1.0),
+                                 "DeltaY", DoubleValue (1.0),
+                                 "GridWidth", UintegerValue (3),
+                                 "LayoutType", StringValue ("RowFirst"));
+
+
+  // mobility.SetMobilityModel ("ns3::ConstantVelocityMobilityModel");
+
+Ptr<UniformRandomVariable> x = CreateObject<UniformRandomVariable> ();
+Ptr<NormalRandomVariable> y = CreateObject<NormalRandomVariable> ();
+
+mobility.SetMobilityModel ("ns3::GaussMarkovMobilityModel",
+"Bounds", BoxValue (Box (0, 40, 0, 10000, 000, 0)),
+"TimeStep", TimeValue (Seconds (0.5)),
+"Alpha", DoubleValue (0.8),
+"MeanVelocity", StringValue("ns3::UniformRandomVariable[Min=5|Max=10]"),
+"MeanDirection", StringValue("ns3::UniformRandomVariable[Min=89.99|Max=90]"),
+"MeanPitch", StringValue ("ns3::UniformRandomVariable[Min=0|Max=1]"),
+"NormalVelocity",StringValue("ns3::NormalRandomVariable[Mean=7|Variance=0.001|Bound=0.001]"),
+"NormalDirection",StringValue("ns3::NormalRandomVariable[Mean=90|Variance=0.00000001|Bound=0.000001]"),
+"NormalPitch",StringValue("ns3::NormalRandomVariable[Mean=0|Variance=0.000|Bound=0.00]"));
+
+
+	  //   mobility.SetMobilityModel ("ns3::RandomWalk2dMobilityModel",
+	  //                              "Bounds", RectangleValue (Rectangle (-5000, -10, 5000, 10)));
+	    mobility.Install (nodes);
+
+	  ndn::StackHelper ndnHelper;
+	  ndnHelper.SetDefaultRoutes(true);
+	  ndnHelper.Install(nodes);
+
+	  ndn::StrategyChoiceHelper::InstallAll("/prefix", "/localhost/nfd/strategy/multicast");
+
+
+		ndn::AppHelper consumerHelper("CustomApp1");
+	    // Consumer will request /prefix/0, /prefix/1, ...
+	    consumerHelper.SetPrefix("/prefix");
+	    consumerHelper.SetAttribute("Frequency", StringValue("10")); // 10 interests a second
+	    consumerHelper.Install(nodes);                        // first node
+
+	    // Producer
+	    ndn::AppHelper producerHelper("ns3::ndn::Producer");
+	    // Producer will reply to all requests starting with /prefix
+	    producerHelper.SetPrefix("/prefix");
+	    producerHelper.SetAttribute("PayloadSize", StringValue("1024"));
+	    producerHelper.Install(nodes.Get(0)); // last node
+
+	    Simulator::Stop(Seconds(20.0));
+
+	    Simulator::Run();
+	    Simulator::Destroy();
+	    return 0;
+	}
+}
+int main(int argc, char *argv[]){
+	return ns3::main(argc,argv);
+
+}
+
